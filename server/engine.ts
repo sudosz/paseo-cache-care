@@ -7,6 +7,7 @@ import { constants } from "node:fs";
 import { join, delimiter } from "node:path";
 import { catalog, type Adapter } from "./catalog";
 import type { Entry } from "../shared/contracts";
+import { blockingProcesses } from "./activity";
 const exec = promisify(execFile);
 export async function validDirectory(path: string) {
   try { return (await lstat(path)).isDirectory() && await realpath(path) === path; } catch { return false; }
@@ -87,8 +88,9 @@ export async function cleanup({ token, ids }: { token: string; ids: string[] }) 
     const results = [];
     for (const a of adapters) {
       try {
-        const { stdout } = await exec("ps", ["-eo", "comm="], { timeout: 5000 });
-        if (/^(cargo|rustc|go|npm|pip|pip3|uv|yarn|pnpm|gradle|apt|apt-get|dnf|yum|pacman|zypper)$/m.test(stdout)) throw new Error("Build or package manager active. Retry when idle.");
+        const { stdout } = await exec("ps", ["-eo", "pid=,stat=,comm="], { timeout: 5000 });
+        const blockers = blockingProcesses(a.id, stdout);
+        if (blockers.length) throw new Error(`Skipped: this cache may be in use by ${blockers.join(", ")}. Stop those processes before retrying this action.`);
         if (a.path) await clearDirectory(a.path);
         else { const result = await exec(a.command!, a.args!, { timeout: 120000, maxBuffer: 1024 * 1024 }); results.push({ id: a.id, ok: true, message: result.stdout.slice(-2000) || "Native cleanup completed." }); continue; }
         results.push({ id: a.id, ok: true, message: "Cache contents removed. Future builds may regenerate them." });

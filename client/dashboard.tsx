@@ -11,7 +11,7 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
   const scanRpc = useRpc(scan);
   const cleanRpc = useRpc(clean);
   const inspect = useMutation({ mutationFn: scanRpc, onSuccess: () => { setSelected([]); setConfirm(false); } });
-  const cleanup = useMutation({ mutationFn: cleanRpc, onSuccess: () => { setSelected([]); setConfirm(false); inspect.reset(); } });
+  const cleanup = useMutation({ mutationFn: cleanRpc, onSuccess: () => { setSelected([]); setConfirm(false); inspect.mutate({}); } });
   const [selected, setSelected] = useState<string[]>([]);
   const [layer, setLayer] = useState("All");
   const [query, setQuery] = useState("");
@@ -51,7 +51,7 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
   return <ScrollView style={{ flex: 1, backgroundColor: c.surface0 }} contentContainerStyle={{ padding: layout.compact ? 16 : 24, gap: 20 }}>
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
       <View style={{ gap: 5 }}><Text style={{ ...text, fontSize: 25, fontWeight: "700" }}>Cache Care</Text><Text style={muted}>A little maintenance. More room to build.</Text></View>
-      {button(inspect.isPending ? "Scanning host…" : "Scan host", () => { cleanup.reset(); inspect.mutate({}); }, true, working)}
+      {button(inspect.isPending ? "Scanning host…" : "Scan host", () => { inspect.mutate({}); }, true, working)}
     </View>
     <View style={{ flexDirection: "row", flexWrap: "wrap", borderWidth: 1, borderColor: border, borderRadius: 10 }}>
       {[["MEASURED CACHES", inspect.data ? size(entries.filter(e => e.cleanable).reduce((n, e) => n + (e.bytes ?? 0), 0)) : "—"], ["AVAILABLE", inspect.data ? `${entries.filter(e => e.available).length} adapters` : "Not scanned"], ["SELECTED", `${selected.length} actions`]].map(([label, value]) => <View key={label} style={{ flex: 1, minWidth: 140, padding: 18, gap: 8 }}><Text style={{ ...muted, letterSpacing: 1 }}>{label}</Text><Text style={{ ...text, fontSize: 22, fontWeight: "600" }}>{value}</Text></View>)}
@@ -94,7 +94,7 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
           <Text style={muted}>No background polling. No automatic sudo. Scans expire after five minutes.</Text>
         </View>
         {detail && <View style={{ padding: 18, gap: 12, borderWidth: 1, borderColor: border, borderRadius: 10 }}><Text style={{ ...text, fontWeight: "600" }}>{detail.name}</Text><Text style={muted}>{detail.description}</Text>{detail.path && <Text selectable style={muted}>{detail.path}</Text>}{button("Close details", () => setDetail(null))}</View>}
-        {cleanup.data && <View style={{ padding: 18, gap: 12, borderWidth: 1, borderColor: border, borderRadius: 10 }}><Text style={{ ...text, fontWeight: "600" }}>Last run</Text>{cleanup.data.results.map(r => <View key={r.id}><Text style={text}>{r.ok ? "✓" : "!"} {r.id}</Text><Text selectable style={muted}>{r.message}</Text></View>)}<Text style={muted}>Scan again to measure current usage.</Text></View>}
+        {cleanup.data && <View style={{ padding: 18, gap: 12, borderWidth: 1, borderColor: border, borderRadius: 10 }}><Text style={{ ...text, fontWeight: "600" }}>Last run · {cleanup.data.results.filter(r => r.ok).length} completed · {cleanup.data.results.filter(r => !r.ok).length} skipped or failed</Text>{cleanup.data.results.map(r => <View key={r.id}><Text style={text}>{r.ok ? "✓" : "!"} {entries.find(e => e.id === r.id)?.name ?? r.id}</Text><Text selectable style={muted}>{r.message}</Text></View>)}<Text style={muted}>Cache sizes refresh after each run.</Text></View>}
       </View>
     </View>
   </ScrollView>;
