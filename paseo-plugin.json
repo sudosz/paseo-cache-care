@@ -1,0 +1,9 @@
+{
+  "id": "cache-care",
+  "name": "Cache Care",
+  "description": "Discover developer caches, review disk usage, and clean selected layers from Paseo.",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.15.4"
+  }
+}
