@@ -25,7 +25,21 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
   const entries = inspect.data?.entries ?? [];
   const visible = entries.filter(e => (unavailable || e.available) && (layer === "All" || e.layer === layer) && `${e.name} ${e.path ?? ""}`.toLowerCase().includes(query.toLowerCase()));
   const picked = entries.filter(e => selected.includes(e.id));
+  const selectable = visible.filter(e => e.cleanable);
+  const visibleSelected = selectable.filter(e => selected.includes(e.id)).length;
+  const hiddenSelected = selected.filter(id => !visible.some(e => e.id === id)).length;
+  const allVisibleSelected = selectable.length > 0 && visibleSelected === selectable.length;
   const working = inspect.isPending || cleanup.isPending;
+  function selectVisible(nonOptional = false) {
+    if (working) return;
+    setConfirm(false);
+    setSelected(s => [...new Set([...s, ...selectable.filter(e => !nonOptional || !e.optional).map(e => e.id)])]);
+  }
+  function clearVisible() {
+    if (working) return;
+    setConfirm(false);
+    setSelected(s => s.filter(id => !selectable.some(e => e.id === id)));
+  }
   function toggle(e: Entry) {
     if (!e.cleanable || working) return;
     setConfirm(false);
@@ -50,7 +64,17 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
     {(inspect.error || cleanup.error) && <Text accessibilityRole="alert" style={text}>{inspect.error?.message ?? cleanup.error?.message}</Text>}
     <View style={{ flexDirection: layout.compact ? "column" : "row", alignItems: "flex-start", gap: 20 }}>
       <View style={{ flex: 1, alignSelf: "stretch", borderWidth: 1, borderColor: border, borderRadius: 10, overflow: "hidden" }}>
-        <View style={{ padding: 14, borderBottomWidth: 1, borderColor: border }}><Text style={{ ...text, fontWeight: "600" }}>{inspect.data ? `${visible.length} cache locations & tools` : "Your host, neatly sorted"}</Text></View>
+        <View style={{ padding: 14, borderBottomWidth: 1, borderColor: border, gap: 12 }}>
+          <Text style={{ ...text, fontWeight: "600" }}>{inspect.data ? `${visible.length} cache locations & tools` : "Your host, neatly sorted"}</Text>
+          {inspect.data && <>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+              {button(allVisibleSelected ? "Deselect visible" : "Select all visible", () => allVisibleSelected ? clearVisible() : selectVisible(), false, working || !selectable.length)}
+              {button("Select non-optional", () => selectVisible(true), false, working || !selectable.some(e => !e.optional && !selected.includes(e.id)))}
+              {button("Clear selection", () => { setSelected([]); setConfirm(false); }, false, working || !selected.length)}
+            </View>
+            <Text accessibilityLiveRegion="polite" style={muted}>{visibleSelected} of {selectable.length} available actions selected in this view{hiddenSelected ? ` · ${hiddenSelected} selected outside this filter` : ""}. Select all includes optional actions.</Text>
+          </>}
+        </View>
         {!inspect.data && <View style={{ padding: 32, gap: 12 }}><Text style={{ ...text, fontSize: 18, fontWeight: "600" }}>Start with a scan</Text><Text style={muted}>Discover available tools and measure known cache locations. Nothing is deleted during scanning.</Text><Text style={muted}>Downloads · Build output · Containers · System packages</Text></View>}
         {inspect.data && !visible.length && <Text style={{ ...muted, padding: 24 }}>No matching adapters. Try another category or show unavailable tools.</Text>}
         {visible.map(e => <View key={e.id} style={{ flexDirection: "row", gap: 12, padding: 15, borderBottomWidth: 1, borderColor: border, alignItems: "center", opacity: e.available ? 1 : 0.6 }}>
@@ -64,8 +88,9 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
           <Text style={{ ...text, fontSize: 16, fontWeight: "600" }}>Cleanup plan</Text><Text style={{ ...text, fontSize: 28, fontWeight: "600" }}>{size(picked.reduce((n, e) => n + (e.bytes ?? 0), 0))}</Text>
           <Text style={muted}>Measured selection. Native-command actions may reclaim additional space; no estimate is invented.</Text>
           {picked.map(e => <Text key={e.id} style={text}>• {e.name}</Text>)}
+          {selected.length > 40 && <Text style={text}>Maximum 40 actions per run. Deselect some actions before continuing.</Text>}
           {confirm && <Text style={text}>Run these {selected.length} actions? Deleted caches must be rebuilt or downloaded again. Keep agents and builds idle.</Text>}
-          {button(cleanup.isPending ? "Cleaning…" : confirm ? "Confirm cleanup" : "Review cleanup", () => { if (!confirm) setConfirm(true); else cleanup.mutate({ token: inspect.data!.token, ids: selected }); }, true, working || !selected.length)}
+          {button(cleanup.isPending ? "Cleaning…" : confirm ? "Confirm cleanup" : "Review cleanup", () => { if (!confirm) setConfirm(true); else cleanup.mutate({ token: inspect.data!.token, ids: selected }); }, true, working || !selected.length || selected.length > 40)}
           <Text style={muted}>No background polling. No automatic sudo. Scans expire after five minutes.</Text>
         </View>
         {detail && <View style={{ padding: 18, gap: 12, borderWidth: 1, borderColor: border, borderRadius: 10 }}><Text style={{ ...text, fontWeight: "600" }}>{detail.name}</Text><Text style={muted}>{detail.description}</Text>{detail.path && <Text selectable style={muted}>{detail.path}</Text>}{button("Close details", () => setDetail(null))}</View>}
