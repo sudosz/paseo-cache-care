@@ -25,6 +25,10 @@ async function commandExists(name: string) {
 let snapshot: { token: string; at: number; adapters: Adapter[] } | undefined;
 let busy = false;
 let scanning: Promise<Awaited<ReturnType<typeof scanHost>>> | undefined;
+/** Last measured size per path, so a scan that hits its deadline still shows a
+ * useful number instead of dropping to "Unmeasured". Cleared when a cache is
+ * emptied or its path disappears. */
+const sizeCache = new Map<string, number>();
 export async function inspect() {
   if (busy) throw new Error("Cleanup is running. Scan after it finishes.");
   if (scanning) return scanning;
@@ -62,16 +66,19 @@ async function scanHost() {
   }
   const pending = entries.filter(e => e.available && e.path);
   let next = 0;
-  await Promise.all(Array.from({ length: 2 }, async () => {
+  await Promise.all(Array.from({ length: 3 }, async () => {
     while (next < pending.length) {
       const entry = pending[next++];
       entry.reason = "Size unavailable (scan budget)";
       if (Date.now() >= deadline) continue;
       try {
-        const { stdout } = await exec("du", ["-sk", entry.path!], { timeout: budget(4000), killSignal: "SIGKILL", maxBuffer: 65536 });
+        const { stdout } = await exec("du", ["-sk", entry.path!], { timeout: budget(5000), killSignal: "SIGKILL", maxBuffer: 65536 });
         const bytes = Number(stdout.trim().split(/\s+/)[0]) * 1024;
-        if (Number.isFinite(bytes) && bytes >= 0) { entry.bytes = bytes; entry.reason = entry.cleanable ? "Ready" : "Inspection only"; }
-      } catch { /* Return useful partial results instead of timing out the RPC. */ }
+        if (Number.isFinite(bytes) && bytes >= 0) { entry.bytes = bytes; entry.reason = entry.cleanable ? "Ready" : "Inspection only"; sizeCache.set(entry.path!, bytes); }
+      } catch {
+        const known = sizeCache.get(entry.path!);
+        if (known !== undefined) { entry.bytes = known; entry.reason = "Last known size (scan budget)"; }
+      }
     }
   }));
   snapshot = { token: randomUUID(), at: Date.now(), adapters: adapters.filter(a => entries.find(e => e.id === a.id)?.cleanable) };
@@ -93,6 +100,7 @@ export async function cleanup({ token, ids }: { token: string; ids: string[] }) 
         if (blockers.length) throw new Error(`Skipped: this cache may be in use by ${blockers.join(", ")}. Stop those processes before retrying this action.`);
         if (a.path) await clearDirectory(a.path);
         else { const result = await exec(a.command!, a.args!, { timeout: 120000, maxBuffer: 1024 * 1024 }); results.push({ id: a.id, ok: true, message: result.stdout.slice(-2000) || "Native cleanup completed." }); continue; }
+        if (a.path) sizeCache.delete(a.path);
         results.push({ id: a.id, ok: true, message: "Cache contents removed. Future builds may regenerate them." });
       } catch (e) { results.push({ id: a.id, ok: false, message: e instanceof Error ? e.message : String(e) }); }
     }

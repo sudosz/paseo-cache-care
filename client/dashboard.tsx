@@ -3,8 +3,10 @@ import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useMutation } from "@tanstack/react-query";
 import { useRpc, type PluginScreenProps } from "@getpaseo/plugin/client";
 import { scan, clean, type Entry } from "../shared/contracts";
+import { formatBytes } from "../shared/format";
 
-const size = (n: number | null) => n === null ? "Native cleanup" : n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GiB` : `${(n / 1024 ** 2).toFixed(1)} MiB`;
+const size = (n: number | null, native = false) => formatBytes(n, { native });
+const sizeLabel = (e: Entry) => size(e.bytes, !e.path);
 const layers = ["All", "Downloads", "Build", "System", "Containers", "Environments", "Android"];
 
 export function Dashboard({ theme, layout }: PluginScreenProps) {
@@ -29,6 +31,8 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
   const visibleSelected = selectable.filter(e => selected.includes(e.id)).length;
   const hiddenSelected = selected.filter(id => !visible.some(e => e.id === id)).length;
   const allVisibleSelected = selectable.length > 0 && visibleSelected === selectable.length;
+  const measuredTotal = entries.filter(e => e.cleanable).reduce((n, e) => n + (e.bytes ?? 0), 0);
+  const unmeasuredPaths = entries.filter(e => e.cleanable && e.path && e.bytes === null).length;
   const working = inspect.isPending || cleanup.isPending;
   function selectVisible(nonOptional = false) {
     if (working) return;
@@ -54,7 +58,7 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
       {button(inspect.isPending ? "Scanning host…" : "Scan host", () => { inspect.mutate({}); }, true, working)}
     </View>
     <View style={{ flexDirection: "row", flexWrap: "wrap", borderWidth: 1, borderColor: border, borderRadius: 10 }}>
-      {[["MEASURED CACHES", inspect.data ? size(entries.filter(e => e.cleanable).reduce((n, e) => n + (e.bytes ?? 0), 0)) : "—"], ["AVAILABLE", inspect.data ? `${entries.filter(e => e.available).length} adapters` : "Not scanned"], ["SELECTED", `${selected.length} actions`]].map(([label, value]) => <View key={label} style={{ flex: 1, minWidth: 140, padding: 18, gap: 8 }}><Text style={{ ...muted, letterSpacing: 1 }}>{label}</Text><Text style={{ ...text, fontSize: 22, fontWeight: "600" }}>{value}</Text></View>)}
+      {[["MEASURED CACHES", inspect.data ? `${size(measuredTotal)}${unmeasuredPaths ? ` + ${unmeasuredPaths} unmeasured` : ""}` : "—"], ["AVAILABLE", inspect.data ? `${entries.filter(e => e.available).length} adapters` : "Not scanned"], ["SELECTED", `${selected.length} actions`]].map(([label, value]) => <View key={label} style={{ flex: 1, minWidth: 140, padding: 18, gap: 8 }}><Text style={{ ...muted, letterSpacing: 1 }}>{label}</Text><Text style={{ ...text, fontSize: 22, fontWeight: "600" }}>{value}</Text></View>)}
     </View>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
       <TextInput accessibilityLabel="Search caches" placeholder="Search tools, caches, or paths" placeholderTextColor={c.foregroundMuted} value={query} onChangeText={setQuery} style={{ ...text, minWidth: 220, flex: 1, borderWidth: 1, borderColor: border, borderRadius: 7, padding: 10 }} />
@@ -80,7 +84,7 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
         {visible.map(e => <View key={e.id} style={{ flexDirection: "row", gap: 12, padding: 15, borderBottomWidth: 1, borderColor: border, alignItems: "center", opacity: e.available ? 1 : 0.6 }}>
           <Pressable accessibilityRole="checkbox" accessibilityLabel={`Select ${e.name}`} accessibilityState={{ checked: selected.includes(e.id), disabled: !e.cleanable }} disabled={!e.cleanable || working} onPress={() => toggle(e)} style={{ width: 25, height: 25, borderRadius: 5, borderWidth: 1, borderColor: c.foregroundMuted, alignItems: "center", justifyContent: "center", backgroundColor: selected.includes(e.id) ? c.accent : c.surface0 }}><Text style={{ color: selected.includes(e.id) ? c.accentForeground : c.foreground }}>{selected.includes(e.id) ? "✓" : ""}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${e.name}`} onPress={() => setDetail(e)} style={{ flex: 1, gap: 5 }}><Text style={{ ...text, fontWeight: "600" }}>{e.name}</Text><Text numberOfLines={1} style={muted}>{e.path ?? e.description}</Text><Text style={muted}>{e.layer} · {e.optional ? "Optional · " : ""}{e.reason}</Text></Pressable>
-          <Text style={{ ...text, fontSize: 12 }}>{size(e.bytes)}</Text>
+          <Text style={{ ...text, fontSize: 12 }}>{sizeLabel(e)}</Text>
         </View>)}
       </View>
       <View style={{ width: layout.compact ? "100%" : 300, gap: 16 }}>
