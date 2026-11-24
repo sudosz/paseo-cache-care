@@ -39,17 +39,22 @@ async function diskInfo() {
     return { total: 0, free: 0, used: 0 };
   }
 }
+function parseDu(stdout: string) {
+  return stdout.split("\n").flatMap(line => {
+    const match = line.match(/^(\d+)\s+(.+)$/);
+    if (!match || match[2] === "/workspace") return [];
+    return [{ path: match[2], bytes: Number(match[1]) * 1024 }];
+  }).filter(item => Number.isFinite(item.bytes)).sort((a, b) => b.bytes - a.bytes).slice(0, 8);
+}
 async function workspaceSpace() {
+  let stdout = "";
   try {
-    const { stdout } = await exec("du", ["-hd1", "/workspace"], { timeout: 4000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 });
-    return stdout.split("\n").flatMap(line => {
-      const match = line.match(/^(\d+)\s+(.+)$/);
-      if (!match || match[2] === "/workspace") return [];
-      return [{ path: match[2], bytes: Number(match[1]) * 1024 }];
-    }).filter(item => Number.isFinite(item.bytes)).sort((a, b) => b.bytes - a.bytes).slice(0, 8);
-  } catch {
-    return [];
+    ({ stdout } = await exec("du", ["-hd1", "/workspace"], { timeout: 4000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }));
+  } catch (error) {
+    // du exits non-zero if one child is unreadable; keep the rows it did print.
+    stdout = String((error as { stdout?: string })?.stdout ?? "");
   }
+  return parseDu(stdout);
 }
 async function commandExists(name: string) {
   for (const dir of (process.env.PATH ?? "").split(delimiter).filter(Boolean)) {
