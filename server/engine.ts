@@ -49,13 +49,11 @@ function parseDu(stdout: string) {
 async function workspaceSpace() {
   let stdout = "";
   try {
-    ({ stdout } = await exec("du", ["-hd1", "/workspace"], { timeout: 4000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }));
+    ({ stdout } = await exec("du", ["-kd1", "/workspace"], { timeout: 4000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }));
   } catch (error) {
     // du exits non-zero if one child is unreadable; keep the rows it did print.
     stdout = String((error as { stdout?: string })?.stdout ?? "");
-    console.error(`[cache-care] du failed: ${error instanceof Error ? error.message : String(error)}; stdout=${stdout.length}`);
   }
-  console.log(`[cache-care] du rows: ${stdout.length} bytes`);
   return parseDu(stdout);
 }
 async function commandExists(name: string) {
