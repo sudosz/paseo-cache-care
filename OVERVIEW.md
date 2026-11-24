@@ -1,6 +1,8 @@
 # Cache Care
 
-Inspect developer caches and run selected cleanup actions from Paseo. A grouped dashboard shows measured disk usage, available tools, optional actions, and results. Search by tool or path and review each selection before cleanup.
+Inspect developer caches and run selected cleanup actions from Paseo. A grouped dashboard shows measured disk usage, available tools, optional actions, and results. A read-only disk overview shows free space, warns below 10 GiB, and maps the largest entries under `/workspace`; after cleanup it reports the measured free-space change. Search by tool or path and review each selection before cleanup.
+
+Rows are labelled **Safe** or **Your call**. Optional actions stay unticked, and protected roots such as `/`, `/home/paseo`, `/opt/paseo`, `/workspace`, and `/var` are refused even if a catalog entry is wrong. Known cache roots must resolve without symlinks.
 
 Detects npm, pip, Cargo, Go, uv, pnpm, Yarn, Conda, system package managers, and Docker. pyenv, ADB, and Gradle are inspection-only in this release. Workspace Rust and Python caches are discovered under `/workspace`.
 
