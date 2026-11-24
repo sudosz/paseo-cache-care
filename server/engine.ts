@@ -2,19 +2,54 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
-import { access, lstat, realpath, readdir, rm } from "node:fs/promises";
+import { access, lstat, realpath, readdir, rm, statfs } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join, delimiter } from "node:path";
 import { catalog, type Adapter } from "./catalog";
 import type { Entry } from "../shared/contracts";
 import { blockingProcesses } from "./activity";
 const exec = promisify(execFile);
+/** Paths that must never be treated as a cache, even if a future catalog entry is wrong. */
+const PROTECTED = new Set([
+  "/", "/home", "/home/paseo", "/root", "/opt", "/opt/paseo", "/opt/bifrost",
+  "/srv", "/var", "/usr", "/etc", "/workspace", "/tmp",
+]);
+export function assertSafeCachePath(path: string) {
+  const p = path.replace(/\/+$/, "") || "/";
+  if (PROTECTED.has(p)) throw new Error(`Refusing protected path: ${p}`);
+  if (p.startsWith("/workspace/") && p.split("/").length <= 3) {
+    throw new Error(`Refusing a workspace project root: ${p}`);
+  }
+}
 export async function validDirectory(path: string) {
+  assertSafeCachePath(path);
   try { return (await lstat(path)).isDirectory() && await realpath(path) === path; } catch { return false; }
 }
 export async function clearDirectory(path: string) {
   if (!await validDirectory(path)) throw new Error("Cache path missing or contains a symbolic link.");
   for (const name of await readdir(path)) await rm(join(path, name), { recursive: true, force: true });
+}
+async function diskInfo() {
+  try {
+    const s = await statfs("/");
+    const total = s.blocks * s.bsize;
+    const free = s.bavail * s.bsize;
+    return { total, free, used: total - free };
+  } catch {
+    return { total: 0, free: 0, used: 0 };
+  }
+}
+async function workspaceSpace() {
+  try {
+    const { stdout } = await exec("du", ["-xhd1", "/workspace"], { timeout: 2500, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 });
+    return stdout.split("\n").flatMap(line => {
+      const match = line.match(/^(\d+)\s+(.+)$/);
+      if (!match || match[2] === "/workspace") return [];
+      return [{ path: match[2], bytes: Number(match[1]) * 1024 }];
+    }).filter(item => Number.isFinite(item.bytes)).sort((a, b) => b.bytes - a.bytes).slice(0, 8);
+  } catch {
+    return [];
+  }
 }
 async function commandExists(name: string) {
   for (const dir of (process.env.PATH ?? "").split(delimiter).filter(Boolean)) {
@@ -82,7 +117,8 @@ async function scanHost() {
     }
   }));
   snapshot = { token: randomUUID(), at: Date.now(), adapters: adapters.filter(a => entries.find(e => e.id === a.id)?.cleanable) };
-  return { token: snapshot.token, platform: process.platform, entries };
+  const [disk, space] = await Promise.all([diskInfo(), workspaceSpace()]);
+  return { token: snapshot.token, platform: process.platform, entries, disk, space };
 }
 export async function cleanup({ token, ids }: { token: string; ids: string[] }) {
   if (scanning) throw new Error("Scan is running. Wait for its results.");
@@ -91,6 +127,7 @@ export async function cleanup({ token, ids }: { token: string; ids: string[] }) 
   const adapters = [...new Set(ids)].map(id => { const a = snapshot!.adapters.find(a => a.id === id); if (!a) throw new Error("Unknown or unavailable adapter."); return a; });
   snapshot = undefined;
   busy = true;
+  const before = await diskInfo();
   try {
     const results = [];
     for (const a of adapters) {
@@ -104,6 +141,7 @@ export async function cleanup({ token, ids }: { token: string; ids: string[] }) 
         results.push({ id: a.id, ok: true, message: "Cache contents removed. Future builds may regenerate them." });
       } catch (e) { results.push({ id: a.id, ok: false, message: e instanceof Error ? e.message : String(e) }); }
     }
-    return { results };
+    const after = await diskInfo();
+    return { results, reclaimedBytes: Math.max(0, after.free - before.free) };
   } finally { busy = false; }
 }

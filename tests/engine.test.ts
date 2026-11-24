@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, symlink, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clearDirectory, validDirectory, cleanup } from "../server/engine";
+import { clearDirectory, validDirectory, cleanup, assertSafeCachePath } from "../server/engine";
 import { catalog } from "../server/catalog";
 test("cleanup refuses linked roots and preserves targets of nested symlinks", async () => {
   const root = await mkdtemp(join(tmpdir(), "care-test-"));
@@ -20,6 +20,13 @@ test("cleanup refuses linked roots and preserves targets of nested symlinks", as
 });
 test("cleanup cannot execute without a valid scan", async () => {
   await assert.rejects(cleanup({ token: "forged", ids: ["npm"] }), /Scan expired/);
+});
+test("protected roots and workspace project roots are never cache paths", () => {
+  for (const path of ["/", "/home/paseo", "/opt/paseo", "/workspace", "/workspace/project", "/var"]) {
+    assert.throws(() => assertSafeCachePath(path), /Refusing/);
+  }
+  assert.doesNotThrow(() => assertSafeCachePath("/home/paseo/.npm/_cacache"));
+  assert.doesNotThrow(() => assertSafeCachePath("/workspace/project/target/debug/incremental"));
 });
 test("catalog keeps environment and device actions inspection-only", () => {
   for (const id of ["adb", "pyenv", "gradle"]) assert.equal(catalog().find(a => a.id === id)?.inspect, true);

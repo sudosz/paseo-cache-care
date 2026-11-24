@@ -33,6 +33,8 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
   const allVisibleSelected = selectable.length > 0 && visibleSelected === selectable.length;
   const measuredTotal = entries.filter(e => e.cleanable).reduce((n, e) => n + (e.bytes ?? 0), 0);
   const unmeasuredPaths = entries.filter(e => e.cleanable && e.path && e.bytes === null).length;
+  const disk = inspect.data?.disk;
+  const lowDisk = !!disk && disk.total > 0 && disk.free < 10 * 1024 ** 3;
   const working = inspect.isPending || cleanup.isPending;
   function selectVisible(nonOptional = false) {
     if (working) return;
@@ -58,8 +60,9 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
       {button(inspect.isPending ? "Scanning host…" : "Scan host", () => { inspect.mutate({}); }, true, working)}
     </View>
     <View style={{ flexDirection: "row", flexWrap: "wrap", borderWidth: 1, borderColor: border, borderRadius: 10 }}>
-      {[["MEASURED CACHES", inspect.data ? `${size(measuredTotal)}${unmeasuredPaths ? ` + ${unmeasuredPaths} unmeasured` : ""}` : "—"], ["AVAILABLE", inspect.data ? `${entries.filter(e => e.available).length} adapters` : "Not scanned"], ["SELECTED", `${selected.length} actions`]].map(([label, value]) => <View key={label} style={{ flex: 1, minWidth: 140, padding: 18, gap: 8 }}><Text style={{ ...muted, letterSpacing: 1 }}>{label}</Text><Text style={{ ...text, fontSize: 22, fontWeight: "600" }}>{value}</Text></View>)}
+      {[["MEASURED CACHES", inspect.data ? `${size(measuredTotal)}${unmeasuredPaths ? ` + ${unmeasuredPaths} unmeasured` : ""}` : "—"], ["FREE DISK", disk ? size(disk.free) : "—"], ["AVAILABLE", inspect.data ? `${entries.filter(e => e.available).length} adapters` : "Not scanned"], ["SELECTED", `${selected.length} actions`]].map(([label, value]) => <View key={label} style={{ flex: 1, minWidth: 140, padding: 18, gap: 8 }}><Text style={{ ...muted, letterSpacing: 1 }}>{label}</Text><Text style={{ ...text, fontSize: 22, fontWeight: "600" }}>{value}</Text></View>)}
     </View>
+    {lowDisk && <View style={{ borderWidth: 1, borderColor: border, borderRadius: 10, padding: 14, gap: 5 }}><Text style={{ ...text, fontWeight: "600" }}>Low disk: {size(disk.free)} free of {size(disk.total)}</Text><Text style={muted}>Scan and review before cleaning. Nothing is deleted until you confirm; in-use files are skipped where possible.</Text></View>}
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
       <TextInput accessibilityLabel="Search caches" placeholder="Search tools, caches, or paths" placeholderTextColor={c.foregroundMuted} value={query} onChangeText={setQuery} style={{ ...text, minWidth: 220, flex: 1, borderWidth: 1, borderColor: border, borderRadius: 7, padding: 10 }} />
       {button(unavailable ? "Hide unavailable" : "Show unavailable", () => setUnavailable(!unavailable))}
@@ -83,7 +86,7 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
         {inspect.data && !visible.length && <Text style={{ ...muted, padding: 24 }}>No matching adapters. Try another category or show unavailable tools.</Text>}
         {visible.map(e => <View key={e.id} style={{ flexDirection: "row", gap: 12, padding: 15, borderBottomWidth: 1, borderColor: border, alignItems: "center", opacity: e.available ? 1 : 0.6 }}>
           <Pressable accessibilityRole="checkbox" accessibilityLabel={`Select ${e.name}`} accessibilityState={{ checked: selected.includes(e.id), disabled: !e.cleanable }} disabled={!e.cleanable || working} onPress={() => toggle(e)} style={{ width: 25, height: 25, borderRadius: 5, borderWidth: 1, borderColor: c.foregroundMuted, alignItems: "center", justifyContent: "center", backgroundColor: selected.includes(e.id) ? c.accent : c.surface0 }}><Text style={{ color: selected.includes(e.id) ? c.accentForeground : c.foreground }}>{selected.includes(e.id) ? "✓" : ""}</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${e.name}`} onPress={() => setDetail(e)} style={{ flex: 1, gap: 5 }}><Text style={{ ...text, fontWeight: "600" }}>{e.name}</Text><Text numberOfLines={1} style={muted}>{e.path ?? e.description}</Text><Text style={muted}>{e.layer} · {e.optional ? "Optional · " : ""}{e.reason}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${e.name}`} onPress={() => setDetail(e)} style={{ flex: 1, gap: 5 }}><Text style={{ ...text, fontWeight: "600" }}>{e.name}</Text><Text numberOfLines={1} style={muted}>{e.path ?? e.description}</Text><Text style={muted}>{e.layer} · {e.optional ? "Your call · " : "Safe · "}{e.reason}</Text></Pressable>
           <Text style={{ ...text, fontSize: 12 }}>{sizeLabel(e)}</Text>
         </View>)}
       </View>
@@ -97,8 +100,9 @@ export function Dashboard({ theme, layout }: PluginScreenProps) {
           {button(cleanup.isPending ? "Cleaning…" : confirm ? "Confirm cleanup" : "Review cleanup", () => { if (!confirm) setConfirm(true); else cleanup.mutate({ token: inspect.data!.token, ids: selected }); }, true, working || !selected.length || selected.length > 40)}
           <Text style={muted}>No background polling. No automatic sudo. Scans expire after five minutes.</Text>
         </View>
+        {inspect.data?.space?.length ? <View style={{ padding: 18, gap: 10, borderWidth: 1, borderColor: border, borderRadius: 10 }}><Text style={{ ...text, fontSize: 16, fontWeight: "600" }}>Largest under /workspace</Text>{inspect.data.space.map(item => <View key={item.path} style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}><Text numberOfLines={1} style={{ ...muted, flex: 1 }}>{item.path}</Text><Text style={muted}>{size(item.bytes)}</Text></View>)}<Text style={muted}>Read-only size map. No files are touched.</Text></View> : null}
         {detail && <View style={{ padding: 18, gap: 12, borderWidth: 1, borderColor: border, borderRadius: 10 }}><Text style={{ ...text, fontWeight: "600" }}>{detail.name}</Text><Text style={muted}>{detail.description}</Text>{detail.path && <Text selectable style={muted}>{detail.path}</Text>}{button("Close details", () => setDetail(null))}</View>}
-        {cleanup.data && <View style={{ padding: 18, gap: 12, borderWidth: 1, borderColor: border, borderRadius: 10 }}><Text style={{ ...text, fontWeight: "600" }}>Last run · {cleanup.data.results.filter(r => r.ok).length} completed · {cleanup.data.results.filter(r => !r.ok).length} skipped or failed</Text>{cleanup.data.results.map(r => <View key={r.id}><Text style={text}>{r.ok ? "✓" : "!"} {entries.find(e => e.id === r.id)?.name ?? r.id}</Text><Text selectable style={muted}>{r.message}</Text></View>)}<Text style={muted}>Cache sizes refresh after each run.</Text></View>}
+        {cleanup.data && <View style={{ padding: 18, gap: 12, borderWidth: 1, borderColor: border, borderRadius: 10 }}><Text style={{ ...text, fontWeight: "600" }}>Last run · {cleanup.data.results.filter(r => r.ok).length} completed · {cleanup.data.results.filter(r => !r.ok).length} skipped or failed</Text>{cleanup.data.results.map(r => <View key={r.id}><Text style={text}>{r.ok ? "✓" : "!"} {entries.find(e => e.id === r.id)?.name ?? r.id}</Text><Text selectable style={muted}>{r.message}</Text></View>)}<Text style={muted}>Free-space change: {size(cleanup.data.reclaimedBytes)}. Cache sizes refresh after each run.</Text></View>}
       </View>
     </View>
   </ScrollView>;
