@@ -41,7 +41,7 @@ async function diskInfo() {
 }
 async function workspaceSpace() {
   try {
-    const { stdout } = await exec("du", ["-xhd1", "/workspace"], { timeout: 2500, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 });
+    const { stdout } = await exec("du", ["-hd1", "/workspace"], { timeout: 4000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 });
     return stdout.split("\n").flatMap(line => {
       const match = line.match(/^(\d+)\s+(.+)$/);
       if (!match || match[2] === "/workspace") return [];
